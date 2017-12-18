@@ -13,19 +13,15 @@ blue='\001\033[0;34m\002'
 pink='\001\033[0;35m\002'
 NC='\001\033[0m\002'
 
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"  # This loads nvm
+eval "$(rbenv init -)"
+eval "$(pyenv init -)"
+
 function is_git {
   if git rev-parse --is-inside-work-tree 2>/dev/null; then
     return 1
   else
     return 0
-  fi
-}
-
-function check_git {
-  # remove newline from kill
-  if [ -e "/tmp/rangit" ]; then
-    rm /tmp/rangit
-    echo -ne "\r\033[1A"
   fi
 }
 
@@ -42,7 +38,7 @@ function stuff {
     git_branch=$(git rev-parse --abbrev-ref HEAD)
     git_commit=$(git rev-parse HEAD | cut -c1-8)
 
-    if [ "$git_branch" == "HEAD" ]; then
+    if [[ "$git_branch" == "HEAD" ]]; then
       echo -en " [${blue}"
       echo -n ${git_commit}
       echo -en "${NC}] > "
@@ -51,31 +47,28 @@ function stuff {
 
     # TODO: Update this to use something that doesn't use git-status, as it is slow on large
     # status differences
-    IFS=$'\n' read -rd '' -a test_arr <<< "$(git status -s 2>/dev/null | cut -c1-2)"
+    IFS=$'\n' read -rd '' -A test_arr <<< "$(git status -s 2>/dev/null | cut -c1-2)"
     modified=false
     staged=false
 
-    if [ -n "$test_arr" ]; then
-      for i in "${test_arr[@]}"
-      do
-        if [ "${i:0:1}" != " " ] && [ "${i:0:1}" != "?" ]; then
-          staged=true
-        fi
+    test_arr=("${(s'')test_arr}")
 
-        if [ "${i:1:1}" != " " ] && [ "${i:1:1}" != "?" ]; then
-          modified=true
-        fi
-      done
+    if [[ "${test_arr[1]}" != " " ]] && [[ "${test_arr[1]}" != "?" ]]; then
+      staged=true
+    fi
+
+    if [[ "${test_arr[2]}" != " " ]] && [[ "${test_arr[2]}" != "?" ]]; then
+      modified=true
     fi
 
     echo -n " ["
-    if [ "$modified" = false ] && [ "$staged" = false ]; then
+    if [[ "$modified" == false ]] && [[ "$staged" == false ]]; then
       echo -en "${green}"
-    elif [ "$modified" = true ] && [ "$staged" = false ]; then
+    elif [[ "$modified" == true ]] && [[ "$staged" == false ]]; then
       echo -en "${red}"
-    elif [ "$modified" = true ] && [ "$staged" = true ]; then
+    elif [[ "$modified" == true ]] && [[ "$staged" == true ]]; then
       echo -en "${orange}"
-    elif [ "$modified" = false ] && [ "$staged" = true ]; then
+    elif [[ "$modified" == false ]] && [[ "$staged" == true ]]; then
       echo -en "${yellow}"
     fi
     echo -en "$(git rev-parse --abbrev-ref HEAD)${NC}]"
@@ -84,4 +77,33 @@ function stuff {
   echo " > "
 }
 
-export PS1="\$(check_git)@ %.\$(stuff)"
+determine_git() {
+  original_buffer="$BUFFER"
+  command_arr=("${(s' ')BUFFER}")
+
+  # only do this if we're in a git directory
+  if [ $(is_git) ]; then
+    # prefer the original command first, if there's a dash in front
+    if [[ "${command_arr[1]:0:1}" == "-" ]]; then
+      actual_command=${command_arr[1]:1:${#command_arr[1]}-1}
+      if type $actual_command 1>/dev/null 2>/dev/null; then
+        BUFFER="$actual_command ${command_arr[@]:1}"
+      fi
+    fi
+
+    # Test if manual exists
+    man "git-${command_arr[1]}" > /dev/null 2>&1
+
+    if [[ "$?" -eq "0" ]]; then
+      BUFFER="git ${command_arr[@]}"
+    fi
+  fi
+
+  zle accept-line
+}
+
+zle -N determine_git_widget determine_git
+bindkey '^J' determine_git_widget
+bindkey '^M' determine_git_widget
+
+export PS1="@ %.\$(stuff)"
