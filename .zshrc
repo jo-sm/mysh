@@ -61,6 +61,8 @@ function stuff {
       modified=true
     fi
 
+    echo "modified: '${modified}; staged: ${staged}"
+
     echo -n " ["
     if [[ "$modified" == false ]] && [[ "$staged" == false ]]; then
       echo -en "${green}"
